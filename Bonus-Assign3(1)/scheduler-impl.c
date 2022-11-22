@@ -8,20 +8,7 @@ void bubbleSortProcessArray(Process proc[], int n);
 int FindProc(Process proc[], int proc_num, Process p);
 void scheduler(Process *proc, LinkedQueue **ProcessQueue, int proc_num, int queue_num, int period)
 {
-    /* printf("Process number: %d\n", proc_num);
-    for (int i = 0;i < proc_num; i++)
-        printf("%d %d %d\n", proc[i].process_id, proc[i].arrival_time, proc[i].execution_time);
-
-    printf("\nQueue number: %d\n", queue_num);
-    printf("Period: %d\n", period);
-    for (int i = 0;i < queue_num; i++){
-        printf("%d %d %d\n", i, ProcessQueue[i]->time_slice, ProcessQueue[i]->allotment_time);
-    }
-
-    /*
-       Test outprint function, it will output "Time_slot:1-2, pid:3, arrival-time:4, remaining_time:5" to output.loc file.
-    */
-    // outprint(1,2,3,4,5); */
+    int termination_flag = 0;
     int tmp_time = 0;
     int time_slice[queue_num];
     int process_allotment_limit[proc_num]; // count the remaining allotment slide of each process
@@ -30,6 +17,7 @@ void scheduler(Process *proc, LinkedQueue **ProcessQueue, int proc_num, int queu
     for (int i = 0; i < proc_num; i++)
     {
         remaining_time[i] = proc[i].execution_time;
+        process_allotment_limit[i] = -1;
     }
 
     for (int i = 0; i < queue_num; i++)
@@ -39,8 +27,12 @@ void scheduler(Process *proc, LinkedQueue **ProcessQueue, int proc_num, int queu
     Process de_proc;
     int currentQueue = queue_num - 1; // initialize the current queue
 
-    do
+    while(1)
     {
+        //handle termination of program
+        if (termination_flag){
+            break;
+        }
         int finish_flag = 1;
         for (int i = 0; i < proc_num; i++){
             if(remaining_time[i] > 0){
@@ -48,53 +40,96 @@ void scheduler(Process *proc, LinkedQueue **ProcessQueue, int proc_num, int queu
                 break;
             }
         }
-        if (finish_flag){
-            break;
-        }
+        if (finish_flag) termination_flag = 1;
         
         int dequeue_flag = 0;
+        int period_adjustment_flag = 0; //period
+        //handle enqueue
         for (int i = 0; i < proc_num; i++)
         {
-            //handle enqueue
             if (tmp_time == proc[i].arrival_time)
             {
                 ProcessQueue[queue_num - 1] = EnQueue(ProcessQueue[queue_num - 1], proc[i]);
                 process_allotment_limit[i] = ProcessQueue[queue_num - 1]->allotment_time; // assigns max allotment to that process
             }
-            //handle dequeue
-            if (remaining_time[i] == 0)
-            { 
+        }
+        /* for (int i = 0; i < queue_num; i++){
+            printf("%d: ", tmp_time);
+            QueuePrint(ProcessQueue[i]);
+        } */
+        //handle dequeue
+        if (!IsEmptyQueue(ProcessQueue[currentQueue])){
+            Process frontProc = FrontQueue(ProcessQueue[currentQueue]);
+            int frontProcIndex = FindProc(proc, proc_num, frontProc);
+
+            if (remaining_time[frontProcIndex] == 0){
                 de_proc = DeQueue(ProcessQueue[currentQueue]);
+                printf("time: %d, process %d: eoe\n",tmp_time ,de_proc.process_id);
                 dequeue_flag = 1;
             }
             
-            //process uses up to whole slide
-            if (process_allotment_limit[i] % time_slice[currentQueue] == 0 && process_allotment_limit[i] != ProcessQueue[currentQueue]->allotment_time){
-                de_proc = DeQueue(ProcessQueue[currentQueue]);
-                dequeue_flag = 1;
+            if (remaining_time[frontProcIndex] > 0){
+                //reaches period
+                if (tmp_time >= period && tmp_time % period == 0){
+                    // period reached and does not uses up to one slide
+                    if (process_allotment_limit[frontProcIndex] % time_slice[currentQueue] != 0){
+                        period_adjustment_flag = 1;
+                    }
+                    de_proc = DeQueue(ProcessQueue[currentQueue]);
+                    dequeue_flag = 1;
+                } 
+                //period not reached
+                else {
+                    //uses up whole slide
+                    if (process_allotment_limit[frontProcIndex] % time_slice[currentQueue] == 0 && process_allotment_limit[frontProcIndex] < ProcessQueue[currentQueue]->allotment_time){
+                        de_proc = DeQueue(ProcessQueue[currentQueue]);
+                        dequeue_flag = 1;
+                    }
+                }
             }
+
         }
+        
 
         if (dequeue_flag)
         {
             // lower the level of deleted process
             int de_index = FindProc(proc, proc_num, de_proc);
+            printf("dequeue_process_in_handle: %d\n", de_proc.process_id);
             if (remaining_time[de_index] > 0)
             {
-                if (process_allotment_limit[de_index] == 0)
-                {
-                    process_allotment_limit[de_index] = ProcessQueue[currentQueue - 1]->allotment_time; // update the allotment time
-                    ProcessQueue[currentQueue - 1] = EnQueue(ProcessQueue[currentQueue - 1], de_proc);  // enqueue to the lower level queue
-                    proc[de_index].execution_time -= time_slice[currentQueue];
-                    outprint(tmp_time - time_slice[currentQueue], tmp_time, de_proc.process_id, de_proc.arrival_time, remaining_time[de_index]);
+                if (!period_adjustment_flag){
+                    if (process_allotment_limit[de_index] == 0)
+                    {
+                        if (currentQueue == 0){
+                            process_allotment_limit[de_index] = ProcessQueue[0]->allotment_time;
+                            ProcessQueue[0] = EnQueue(ProcessQueue[0], de_proc);
+                            proc[de_index].execution_time -= time_slice[0];
+                            outprint(tmp_time - time_slice[0], tmp_time, de_proc.process_id, de_proc.arrival_time, remaining_time[de_index]);
+                        }
+                        else {
+                            process_allotment_limit[de_index] = ProcessQueue[currentQueue - 1]->allotment_time; // update the allotment time
+                            ProcessQueue[currentQueue - 1] = EnQueue(ProcessQueue[currentQueue - 1], de_proc);  // enqueue to the lower level queue
+                            proc[de_index].execution_time -= time_slice[currentQueue];
+                            outprint(tmp_time - time_slice[currentQueue], tmp_time, de_proc.process_id, de_proc.arrival_time, remaining_time[de_index]);
+                        }
+                    }
+                    // allotment limit > 0
+                    else
+                    {
+                        ProcessQueue[currentQueue] = EnQueue(ProcessQueue[currentQueue], de_proc);
+                        proc[de_index].execution_time -= time_slice[currentQueue];
+                        outprint(tmp_time - time_slice[currentQueue], tmp_time, de_proc.process_id, de_proc.arrival_time, remaining_time[de_index]);
+                    }
                 }
-                // allotment limit > 0
-                else
-                {
+                //period adjustment
+                else {
+                    int used_slice = time_slice[currentQueue] - (process_allotment_limit[de_index] % time_slice[currentQueue]);
+                    proc[de_index].execution_time -= used_slice;
                     ProcessQueue[currentQueue] = EnQueue(ProcessQueue[currentQueue], de_proc);
-                    proc[de_index].execution_time -= time_slice[currentQueue];
-                    outprint(tmp_time - time_slice[currentQueue], tmp_time, de_proc.process_id, de_proc.arrival_time, remaining_time[de_index]);
+                    outprint(tmp_time - used_slice, tmp_time, de_proc.process_id, de_proc.arrival_time, remaining_time[de_index]);
                 }
+                
             }
             if (remaining_time[de_index] == 0)
             {
@@ -183,7 +218,8 @@ void scheduler(Process *proc, LinkedQueue **ProcessQueue, int proc_num, int queu
             process_allotment_limit[index] -= 1;
         }
 
-    } while (++tmp_time);
+        tmp_time++;
+    }
 }
 
 void bubbleSortProcessArray(Process proc[], int n)

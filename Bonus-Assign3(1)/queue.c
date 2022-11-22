@@ -68,6 +68,7 @@ void QueuePrint(LinkedQueue* LQueue){
     if (IsEmpty(LQueue)){
         printf("Empty!\n");
     }else {
+        printf("%d: ", LQueue->time_slice);
         LlistPrint(LQueue);
     }
 }
